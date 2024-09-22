@@ -161,8 +161,8 @@ app.post('/api/login', async (req, res) => {
             return res.status(401).send('Invalid credentials.');
         }
 
-        // Generate token and include user ID in the response
-        const token = jwt.sign({ id: user.id }, process.env.SECRET_KEY);
+        // Generate token with expiration
+        const token = jwt.sign({ id: user.id }, process.env.SECRET_KEY, { expiresIn: '1h' }); // Token valid for 1 hour
         console.log('SUCCESS: User logged in successfully:', username);
 
         // Return token and user ID
@@ -173,20 +173,26 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// Retrieve Messages for a User
-app.get('/api/:id/messages', authenticate, async (req, res) => {
-    const userId = req.params.id;
+// Retrieve User's Own Messages related to Specific User
+app.get('/api/:id/messages/:toid', authenticate, async (req, res) => {
+    const fromUID = req.params.id; // Sender's ID from the URL
+    const toUID = req.params.toid; // Recipient's ID from the URL
 
     try {
-        const messagesCursor = await r.db('test_db').table('messages')
-            .filter(
-                r.row('FROMUID').eq(userId).or(r.row('ToUID').eq(userId))
+        const cursor = await r.db('test_db').table('messages')
+            .filter((message) =>
+                (message('FROMUID').eq(fromUID).and(message('ToUID').eq(toUID)))
+                    .or(message('FROMUID').eq(toUID).and(message('ToUID').eq(fromUID)))
             )
-            .orderBy(r.desc('SentDt')) // Optional: Order by sent date descending
             .run(conn);
 
-        const messages = await messagesCursor.toArray();
-        res.json(messages);
+        const messages = await cursor.toArray();
+
+        if (messages.length === 0) {
+            return res.status(404).json({ message: 'No messages found.' });
+        }
+
+        res.status(200).json({ messages });
     } catch (err) {
         console.error('ERROR: Error retrieving messages:', err.message);
         return res.status(500).send('Error retrieving messages: ' + err.message);
@@ -200,7 +206,7 @@ app.get('/api/:id/posts', authenticate, async (req, res) => {
     try {
         const postsCursor = await r.table('posts')
             .filter({ UserID: userId }) // Filter posts created by the user
-            .orderBy(r.desc('Timestamp')) // Order by timestamp descending
+            .orderBy(r.desc('Timestamp')).limit(50) // Order by timestamp descending
             .run(conn);
 
         const posts = await postsCursor.toArray();
