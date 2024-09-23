@@ -131,7 +131,21 @@ const checkResourceAccess = async (req, res, next) => {
 };
 
 // User Registration Route
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', [
+    body('username')
+        .isLength({ min: 5 }).withMessage('Username must be at least 5 characters long')
+        .isAlphanumeric().withMessage('Username must be alphanumeric'),
+    body('password')
+        .isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+        .matches(/\d/).withMessage('Password must contain a number'),
+    body('groupId')
+        .notEmpty().withMessage('Group ID is required')
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
     const { username, password, groupId } = req.body;
 
     // Check if the user already exists
@@ -153,21 +167,26 @@ app.post('/api/register', async (req, res) => {
 });
 
 // User Login Route with Basic Auth
-app.post('/api/login', [body('username').isEmail(), body('password').isLength({ min: 5 })], async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-    // Proceed with login
+app.post('/api/login', async (req, res) => {
+    // Check for Authorization header
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
         console.log('ERROR: Authorization header is required.');
         return res.status(401).send('Authorization header is required.');
     }
 
+    // Decode the credentials from the Authorization header
     const base64Credentials = authHeader.split(' ')[1];
     const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
     const [username, password] = credentials.split(':');
+
+    // Validate username and password lengths
+    if (username.length < 5) {
+        return res.status(400).json({ errors: [{ msg: 'Username must be at least 5 characters long' }] });
+    }
+    if (password.length < 8) {
+        return res.status(400).json({ errors: [{ msg: 'Password must be at least 8 characters long' }] });
+    }
 
     try {
         const cursor = await r.table('users').filter({ username }).run(conn);
@@ -187,7 +206,7 @@ app.post('/api/login', [body('username').isEmail(), body('password').isLength({ 
         }
 
         // Generate token with expiration
-        const token = jwt.sign({ id: user.id }, process.env.SECRET_KEY, { expiresIn: '1h' }); // Token valid for 1 hour
+        const token = jwt.sign({ id: user.id }, process.env.SECRET_KEY, { expiresIn: '1h' });
         console.log('SUCCESS: User logged in successfully:', username);
 
         // Return token and user ID
