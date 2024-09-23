@@ -1,5 +1,5 @@
 require('dotenv').config(); // Load environment variables from .env file
-
+const { body, validationResult } = require('express-validator');
 const express = require('express');
 const r = require('rethinkdb');
 const bodyParser = require('body-parser');
@@ -10,6 +10,7 @@ const app = express();
 const port = process.env.PORT || 3000; // Use environment variable for port
 const rateLimit = require('express-rate-limit');
 const cors = require('cors'); // Import cors
+const helmet = require('helmet');
 // Create a rate limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -19,6 +20,7 @@ const limiter = rateLimit({
 
 // Apply the rate limiter to all requests
 app.use(limiter);
+app.use(helmet());
 app.use(cors({
     origin: 'http://localhost:3000', // Adjust this to your frontend URL
     methods: ['GET', 'POST', 'PUT', 'DELETE'], // Specify allowed methods
@@ -151,7 +153,12 @@ app.post('/api/register', async (req, res) => {
 });
 
 // User Login Route with Basic Auth
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', [body('username').isEmail(), body('password').isLength({ min: 5 })], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+    // Proceed with login
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
         console.log('ERROR: Authorization header is required.');
