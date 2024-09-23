@@ -9,6 +9,7 @@ const crypto = require('crypto'); // Import crypto module
 const app = express();
 const port = process.env.PORT || 3000; // Use environment variable for port
 const rateLimit = require('express-rate-limit');
+const cors = require('cors'); // Import cors
 // Create a rate limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -18,11 +19,18 @@ const limiter = rateLimit({
 
 // Apply the rate limiter to all requests
 app.use(limiter);
-
+app.use(cors({
+    origin: 'http://localhost:3000', // Adjust this to your frontend URL
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Specify allowed methods
+    credentials: true // Allow credentials (if needed)
+}));
+app.options('/api/login', cors()); // Enable preflight for this route
+app.use(express.json()); // Middleware to parse JSON bodies
 // Middleware
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.set('view engine', 'ejs');
+
 
 // Generate a random secret key if not defined
 if (!process.env.SECRET_KEY) {
@@ -184,7 +192,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Retrieve User's Own Messages related to Specific User
-app.get('/api/:id/messages/:toid', authenticate, async (req, res) => {
+app.get('/api/:id/messages/:toid', authenticate, checkResourceAccess, async (req, res) => {
     const fromUID = req.params.id; // Sender's ID from the URL
     const toUID = req.params.toid; // Recipient's ID from the URL
 
@@ -210,7 +218,7 @@ app.get('/api/:id/messages/:toid', authenticate, async (req, res) => {
 });
 
 // Retrieve Posts for a User
-app.get('/api/:id/posts', authenticate, async (req, res) => {
+app.get('/api/:id/posts', authenticate, checkResourceAccess, async (req, res) => {
     const userId = req.params.id;
 
     try {
