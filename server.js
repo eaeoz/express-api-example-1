@@ -8,6 +8,16 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto'); // Import crypto module
 const app = express();
 const port = process.env.PORT || 3000; // Use environment variable for port
+const rateLimit = require('express-rate-limit');
+// Create a rate limiter
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: 'Too many requests, please try again later.'
+});
+
+// Apply the rate limiter to all requests
+app.use(limiter);
 
 // Middleware
 app.use(bodyParser.json());
