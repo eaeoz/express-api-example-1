@@ -22,7 +22,7 @@ const limiter = rateLimit({
 app.use(limiter);
 app.use(helmet());
 app.use(cors({
-    origin: 'http://localhost:3000', // Adjust this to your frontend URL
+    origin: 'http://localhost:3001', // Adjust this to your frontend URL
     methods: ['GET', 'POST', 'PUT', 'DELETE'], // Specify allowed methods
     credentials: true // Allow credentials (if needed)
 }));
