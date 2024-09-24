@@ -238,7 +238,7 @@ app.post('/api/login', async (req, res) => {
         console.log('SUCCESS: User logged in successfully:', username);
 
         // Return token, user ID, and picture
-        res.json({ token, userId: user.id, picture: user.picture });
+        res.json({ token, userId: user.id });
     } catch (err) {
         console.error('ERROR: Error logging in:', err.message);
         return res.status(500).send('Error logging in: ' + err.message);
@@ -322,6 +322,34 @@ app.get('/api/:id/posts', authenticate, checkResourceAccess, async (req, res) =>
 });
 
 
+app.delete('/api/:id/posts/:postId', authenticate, checkResourceAccess, async (req, res) => {
+    const { id: userId, postId } = req.params;
+
+    try {
+        // Fetch the post directly into the post variable
+        const post = await r.table('posts').get(postId).run(conn);
+
+        if (!post) {
+            return res.status(404).send('Post not found');
+        }
+
+        console.log('Fetched post:', post); // Debugging log
+
+        // Check if the post belongs to the user
+        if (post.UserID !== userId) {
+            return res.status(403).send('You are not authorized to delete this post');
+        }
+
+        // Delete the post
+        await r.table('posts').get(postId).delete().run(conn);
+
+        res.send('Post deleted successfully');
+    } catch (err) {
+        console.error('ERROR: Error deleting post:', err.message);
+        return res.status(500).send('Error deleting post: ' + err.message);
+    }
+});
+
 
 // Post a New Message
 app.post('/api/messages', verifyToken, async (req, res) => {
@@ -377,6 +405,21 @@ app.post('/api/posts', verifyToken, async (req, res) => {
     }
 });
 
+app.get('/api/posts', async (req, res) => {
+    try {
+        const posts = await r.db('test_db').table('posts')
+            .orderBy(r.desc('Timestamp')) // Sort by Timestamp in descending order
+            .limit(10) // Limit to the last 10 posts
+            .run(conn);
+
+        const postsArray = await posts.toArray(); // Convert cursor to array
+
+        res.status(200).json(postsArray);
+    } catch (err) {
+        console.error('ERROR: Error fetching posts:', err.message);
+        return res.status(500).send('Error fetching posts: ' + err.message);
+    }
+});
 
 // 404 Error Handler for unknown URLs
 app.use((req, res) => {
