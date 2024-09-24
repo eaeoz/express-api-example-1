@@ -11,6 +11,7 @@ const port = process.env.PORT || 3000; // Use environment variable for port
 const rateLimit = require('express-rate-limit');
 const cors = require('cors'); // Import cors
 const helmet = require('helmet');
+
 // Create a rate limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -160,16 +161,19 @@ app.post('/api/register', [
         .isAlphanumeric().withMessage('Username must be alphanumeric'),
     body('password')
         .isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
-        .matches(/\d/).withMessage('Password must contain a number'),
-    body('groupId')
-        .notEmpty().withMessage('Group ID is required')
+        .notEmpty().withMessage('Group ID is required'),
+    body('picture')
+        .optional()
+        .isString().withMessage('Picture must be a base64 string')
+        .matches(/^data:image\/[a-zA-Z]+;base64,/).withMessage('Picture must be a valid base64 image')
 ], async (req, res) => {
     const errors = validationResult(req);
+    const groupId = "100" // registration from page for default user
     if (!errors.isEmpty()) {
         return res.status(400).json({ errors: errors.array() });
     }
 
-    const { username, password, groupId } = req.body;
+    const { username, password, picture } = req.body;
 
     // Check if the user already exists
     const existingUserCursor = await r.table('users').filter({ username }).run(conn);
@@ -182,12 +186,13 @@ app.post('/api/register', [
     const hashedPassword = await bcrypt.hash(password, 10);
 
     try {
-        await r.table('users').insert({ username, password: hashedPassword, groupId }).run(conn);
+        await r.table('users').insert({ username, password: hashedPassword, groupId, picture }).run(conn);
         res.status(201).json({ message: 'User registered successfully.' });
     } catch (err) {
         return res.status(500).json({ error: 'Error registering user: ' + err.message });
     }
 });
+
 
 // User Login Route with Basic Auth
 app.post('/api/login', async (req, res) => {
@@ -229,16 +234,17 @@ app.post('/api/login', async (req, res) => {
         }
 
         // Generate token with expiration
-        const token = jwt.sign({ id: user.id, username: user.username }, process.env.SECRET_KEY, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id }, process.env.SECRET_KEY, { expiresIn: '1h' });
         console.log('SUCCESS: User logged in successfully:', username);
 
-        // Return token and user ID
-        res.json({ token, userId: user.id });
+        // Return token, user ID, and picture
+        res.json({ token, userId: user.id, picture: user.picture });
     } catch (err) {
         console.error('ERROR: Error logging in:', err.message);
         return res.status(500).send('Error logging in: ' + err.message);
     }
 });
+
 
 // Retrieve User's Own Messages related to Specific User
 app.get('/api/:id/messages/:toid', authenticate, checkResourceAccess, async (req, res) => {
@@ -271,18 +277,51 @@ app.get('/api/:id/posts', authenticate, checkResourceAccess, async (req, res) =>
     const userId = req.params.id;
 
     try {
+        // Fetch the user information based on userId
+        const userCursor = await r.table('users').get(userId).run(conn);
+        const user = await userCursor;
+
+        if (!user) {
+            return res.status(404).send('User not found');
+        }
+
+        // Fetch posts created by the user
         const postsCursor = await r.table('posts')
             .filter({ UserID: userId }) // Filter posts created by the user
             .orderBy(r.desc('Timestamp')).limit(50) // Order by timestamp descending
             .run(conn);
 
         const posts = await postsCursor.toArray();
-        res.json(posts);
+
+        // Create the response object
+        const response = {
+            userInfo: {
+                username: user.username, // Add username
+                picture: user.picture, // Add picture
+            },
+            posts: posts.map(post => ({
+                CommentsCount: post.CommentsCount,
+                Content: post.Content,
+                LikesCount: post.LikesCount,
+                MediaType: post.MediaType,
+                MediaURL: post.MediaURL,
+                PostID: post.PostID,
+                SharesCount: post.SharesCount,
+                Timestamp: post.Timestamp,
+                UserID: post.UserID,
+                ViewCount: post.ViewCount,
+                id: post.id, // Assuming 'id' is a field in your posts table
+            })),
+        };
+
+        res.json(response); // Return the combined object
     } catch (err) {
         console.error('ERROR: Error retrieving posts:', err.message);
         return res.status(500).send('Error retrieving posts: ' + err.message);
     }
 });
+
+
 
 // Post a New Message
 app.post('/api/messages', verifyToken, async (req, res) => {
