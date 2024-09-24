@@ -105,6 +105,29 @@ const authenticate = (req, res, next) => {
     });
 };
 
+const verifyToken = async (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).send('Authorization token is required.');
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.SECRET_KEY);
+        req.user = decoded; // Attach the decoded token to the request object
+        next(); // Proceed to the next middleware or route handler
+    } catch (err) {
+        if (err.name === 'JsonWebTokenError') {
+            return res.status(401).send('Invalid token.'); // User is not authenticated
+        } else if (err.name === 'TokenExpiredError') {
+            return res.status(401).send('Token has expired.'); // User is not authenticated
+        } else {
+            console.error('ERROR: Token verification error:', err.message);
+            return res.status(500).send('Error verifying token: ' + err.message);
+        }
+    }
+};
+
 // Resource Access Control Middleware
 const checkResourceAccess = async (req, res, next) => {
     const resourceId = req.params.id;
@@ -206,7 +229,7 @@ app.post('/api/login', async (req, res) => {
         }
 
         // Generate token with expiration
-        const token = jwt.sign({ id: user.id }, process.env.SECRET_KEY, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id, username: user.username }, process.env.SECRET_KEY, { expiresIn: '1h' });
         console.log('SUCCESS: User logged in successfully:', username);
 
         // Return token and user ID
@@ -262,56 +285,59 @@ app.get('/api/:id/posts', authenticate, checkResourceAccess, async (req, res) =>
 });
 
 // Post a New Message
-app.post('/api/messages', authenticate, async (req, res) => {
-    const { FROMUID, ToUID, MessageText, SentDt } = req.body;
+app.post('/api/messages', verifyToken, async (req, res) => {
+    const { ToUID, MessageText, SentDt } = req.body;
+    const FROMUID = req.user.id; // Access the user ID from the request object
+
+    const newMessage = {
+        FROMUID,
+        ToUID,
+        MessageText,
+        ReadStatus: 'Unread',
+        SentDt: SentDt || new Date().toISOString(),
+    };
 
     try {
-        const newMessage = {
-            FROMUID,
-            ToUID,
-            MessageText,
-            ReadStatus: 'Unread',
-            SentDt: SentDt || new Date().toISOString(),
-        };
-
         const result = await r.db('test_db').table('messages')
             .insert(newMessage)
             .run(conn);
 
         res.status(201).json({ message: 'Message created successfully', data: result });
     } catch (err) {
-        console.error('ERROR: Error posting message:', err.message);
-        return res.status(500).send('Error posting message: ' + err.message);
+        console.error('ERROR: Error sending message:', err.message);
+        return res.status(500).send('Error sending message: ' + err.message);
     }
 });
 
 // Post a New Post
-app.post('/api/posts', authenticate, async (req, res) => {
-    const { UserID, Content, MediaType, MediaURL, Timestamp } = req.body;
+app.post('/api/posts', verifyToken, async (req, res) => {
+    const { Content, MediaType, MediaURL, Timestamp } = req.body;
+    const UserID = req.user.id; // Access the user ID from the request object
+
+    const newPost = {
+        UserID,
+        Content,
+        MediaType,
+        MediaURL,
+        Timestamp: Timestamp || new Date().toISOString(),
+        CommentsCount: 0,
+        LikesCount: 0,
+        SharesCount: 0,
+        ViewCount: 0,
+    };
 
     try {
-        const newPost = {
-            UserID,
-            Content,
-            MediaType,
-            MediaURL,
-            Timestamp: Timestamp || new Date().toISOString(),
-            CommentsCount: 0,
-            LikesCount: 0,
-            SharesCount: 0,
-            ViewCount: 0,
-        };
-
         const result = await r.db('test_db').table('posts')
             .insert(newPost)
             .run(conn);
 
         res.status(201).json({ message: 'Post created successfully', data: result });
     } catch (err) {
-        console.error('ERROR: Error posting post:', err.message);
-        return res.status(500).send('Error posting post: ' + err.message);
+        console.error('ERROR: Error sending post:', err.message);
+        return res.status(500).send('Error sending post: ' + err.message);
     }
 });
+
 
 // 404 Error Handler for unknown URLs
 app.use((req, res) => {
