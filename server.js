@@ -131,23 +131,40 @@ const verifyToken = async (req, res, next) => {
 
 // Resource Access Control Middleware
 const checkResourceAccess = async (req, res, next) => {
-    const resourceId = req.params.id;
+    if (req.method === 'GET') {
+        // No access check needed for GET requests
+        return next();
+    }
+
+    if (req.method === 'POST') {
+        // Check if user has permission to create a new post
+        // For example, you can check if the user is authenticated
+        if (!req.user) {
+            return res.status(401).send('Unauthorized');
+        }
+        return next();
+    }
+
+    const postId = req.params.postId;
 
     try {
-        // Fetch user data from the database
-        const cursor = await r.table('users').get(req.user.id).run(conn);
-        if (!cursor) {
-            return res.status(404).send('User not found.');
+        // Fetch the post directly into the post variable
+        const post = await r.table('posts').get(postId).run(conn);
+
+        if (!post) {
+            return res.status(404).send('Post not found.');
         }
 
-        // Check if the user is trying to access their own resource
-        if (cursor.id === resourceId) {
-            return next(); // User can access their own resource
+        // Check if the post belongs to the user
+        if (post.UserID !== req.user.id) {
+            if (req.method === 'PUT') {
+                return res.status(403).send('Access denied: You do not have permission to edit this post.');
+            } else if (req.method === 'DELETE') {
+                return res.status(403).send('Access denied: You do not have permission to delete this post.');
+            }
         }
 
-        // If accessing another user's resource, deny access
-        console.log('ERROR: Access denied for user:', req.user.id);
-        return res.status(403).send('Access denied: You do not have permission to access this resource.');
+        next(); // User can access the post
     } catch (dbError) {
         console.error('Database error:', dbError);
         return res.status(500).send('Internal server error.');
@@ -420,6 +437,38 @@ app.get('/api/posts', async (req, res) => {
         return res.status(500).send('Error fetching posts: ' + err.message);
     }
 });
+
+app.put('/api/posts/:postId', authenticate, checkResourceAccess, async (req, res) => {
+    const postId = req.params.postId;
+    const { Content, MediaType, MediaURL } = req.body;
+
+    try {
+        // Fetch the post directly into the post variable
+        const post = await r.table('posts').get(postId).run(conn);
+
+        if (!post) {
+            return res.status(404).send('Post not found');
+        }
+
+        // Check if the post belongs to the user
+        if (post.UserID !== req.user.id) {
+            return res.status(403).send('You are not authorized to edit this post');
+        }
+
+        // Update the post
+        await r.table('posts').get(postId).update({
+            Content,
+            MediaType,
+            MediaURL,
+        }).run(conn);
+
+        res.send('Post updated successfully');
+    } catch (err) {
+        console.error('ERROR: Error editing post:', err.message);
+        return res.status(500).send('Error editing post: ' + err.message);
+    }
+});
+
 
 // 404 Error Handler for unknown URLs
 app.use((req, res) => {
