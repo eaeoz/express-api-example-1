@@ -131,8 +131,13 @@ const verifyToken = async (req, res, next) => {
 
 // Resource Access Control Middleware
 const checkResourceAccess = async (req, res, next) => {
+    const pathParts = req.path.split('/');
+    const resourceId = pathParts[pathParts.length - 1];
+
     if (req.method === 'GET') {
-        // No access check needed for GET requests
+        if (req.params.id !== req.user.id) {
+            return res.status(403).send(`Access denied: You do not have permission to view this user's ${resourceId}.`);
+        }
         return next();
     }
 
@@ -143,31 +148,6 @@ const checkResourceAccess = async (req, res, next) => {
             return res.status(401).send('Unauthorized');
         }
         return next();
-    }
-
-    const postId = req.params.postId;
-
-    try {
-        // Fetch the post directly into the post variable
-        const post = await r.table('posts').get(postId).run(conn);
-
-        if (!post) {
-            return res.status(404).send('Post not found.');
-        }
-
-        // Check if the post belongs to the user
-        if (post.UserID !== req.user.id) {
-            if (req.method === 'PUT') {
-                return res.status(403).send('Access denied: You do not have permission to edit this post.');
-            } else if (req.method === 'DELETE') {
-                return res.status(403).send('Access denied: You do not have permission to delete this post.');
-            }
-        }
-
-        next(); // User can access the post
-    } catch (dbError) {
-        console.error('Database error:', dbError);
-        return res.status(500).send('Internal server error.');
     }
 };
 
@@ -339,31 +319,25 @@ app.get('/api/:id/posts', authenticate, checkResourceAccess, async (req, res) =>
 });
 
 
-app.delete('/api/:id/posts/:postId', authenticate, checkResourceAccess, async (req, res) => {
-    const { id: userId, postId } = req.params;
+app.delete('/api/:id/posts/:postId', authenticate, async (req, res) => {
+    const postId = req.params.postId;
 
     try {
-        // Fetch the post directly into the post variable
         const post = await r.table('posts').get(postId).run(conn);
 
         if (!post) {
             return res.status(404).send('Post not found');
         }
 
-        console.log('Fetched post:', post); // Debugging log
-
-        // Check if the post belongs to the user
-        if (post.UserID !== userId) {
-            return res.status(403).send('You are not authorized to delete this post');
+        if (post.UserID !== req.user.id) {
+            return res.status(403).send('Access denied: You do not have permission to delete this post');
         }
 
-        // Delete the post
         await r.table('posts').get(postId).delete().run(conn);
-
-        res.send('Post deleted successfully');
-    } catch (err) {
-        console.error('ERROR: Error deleting post:', err.message);
-        return res.status(500).send('Error deleting post: ' + err.message);
+        res.status(204).send('Post deleted successfully');
+    } catch (dbError) {
+        console.error('Database error:', dbError);
+        return res.status(500).send('Internal server error');
     }
 });
 
@@ -438,34 +412,27 @@ app.get('/api/posts', async (req, res) => {
     }
 });
 
-app.put('/api/posts/:postId', authenticate, checkResourceAccess, async (req, res) => {
+app.put('/api/:id/posts/:postId', authenticate, async (req, res) => {
     const postId = req.params.postId;
-    const { Content, MediaType, MediaURL } = req.body;
+    const updatedPost = req.body;
 
     try {
-        // Fetch the post directly into the post variable
         const post = await r.table('posts').get(postId).run(conn);
 
         if (!post) {
             return res.status(404).send('Post not found');
         }
 
-        // Check if the post belongs to the user
         if (post.UserID !== req.user.id) {
-            return res.status(403).send('You are not authorized to edit this post');
+            return res.status(403).send('Access denied: You do not have permission to edit this post');
         }
 
-        // Update the post
-        await r.table('posts').get(postId).update({
-            Content,
-            MediaType,
-            MediaURL,
-        }).run(conn);
+        await r.table('posts').get(postId).update(updatedPost).run(conn);
 
-        res.send('Post updated successfully');
-    } catch (err) {
-        console.error('ERROR: Error editing post:', err.message);
-        return res.status(500).send('Error editing post: ' + err.message);
+        res.status(200).send({ message: 'Post updated successfully' });
+    } catch (dbError) {
+        console.error('Database error:', dbError);
+        return res.status(500).send('Internal server error');
     }
 });
 
