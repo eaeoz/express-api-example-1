@@ -129,15 +129,6 @@ const checkResourceAccess = async (req, res, next) => {
         }
         return next();
     }
-
-    if (req.method === 'POST') {
-        // Check if user has permission to create a new post
-        // For example, you can check if the user is authenticated
-        if (!req.user) {
-            return res.status(401).send('Unauthorized');
-        }
-        return next();
-    }
 };
 
 // User Registration Route
