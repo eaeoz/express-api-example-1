@@ -84,26 +84,38 @@ const connectToDatabase = async () => {
 };
 
 // Authentication Middleware
-const authenticate = (req, res, next) => {
-    const token = req.headers['authorization'];
-    if (!token) {
-        console.log('ERROR: Token is required.');
-        return res.status(403).send('Token is required.');
-    }
-
-    // Extract the token from the Bearer format
-    const bearerToken = token.split(' ')[1];
-    console.log('INFO: Verifying token:', bearerToken);
-
-    jwt.verify(bearerToken, process.env.SECRET_KEY, (err, user) => {
-        if (err) {
-            console.log('ERROR: Invalid token.', err.message);
-            return res.status(403).send('Invalid token.');
+const authenticate = async (req, res, next) => {
+    try {
+        const token = req.headers['authorization'];
+        if (!token) {
+            console.log('ERROR: Token is required.');
+            return res.status(401).send('Token is required.');
         }
-        req.user = user;
-        console.log('SUCCESS: Token verified for user:', user.id);
+
+        // Extract the token from the Bearer format
+        const bearerToken = token.split(' ')[1];
+        console.log('INFO: Verifying token:', bearerToken);
+
+        const decoded = await jwt.verify(bearerToken, process.env.SECRET_KEY);
+        req.user = decoded;
+        console.log('SUCCESS: Token verified for user:', decoded.id);
         next();
-    });
+    } catch (err) {
+        if (err.name === 'JsonWebTokenError') {
+            return res.status(401).send('Invalid token.'); // User is not authenticated
+        } else if (err.name === 'TokenExpiredError') {
+            return res.status(401).send('Token has expired.'); // User is not authenticated
+        } else if (err.code === 'EACCES') {
+            return res.status(403).send('Forbidden: You do not have permission to access this resource.');
+        } else if (err.code === 'ERATELIMIT') {
+            return res.status(429).send('Too many requests: Please try again later.');
+        } else if (err.code === 'ECONNRESET') {
+            return res.status(502).send('Bad gateway: Authentication server is currently unavailable.');
+        } else {
+            console.error('ERROR: Token verification error:', err.message);
+            return res.status(500).send('Error verifying token: ' + err.message);
+        }
+    }
 };
 
 // Resource Access Control Middleware
