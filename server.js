@@ -106,29 +106,6 @@ const authenticate = (req, res, next) => {
     });
 };
 
-const verifyToken = async (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).send('Authorization token is required.');
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.SECRET_KEY);
-        req.user = decoded; // Attach the decoded token to the request object
-        next(); // Proceed to the next middleware or route handler
-    } catch (err) {
-        if (err.name === 'JsonWebTokenError') {
-            return res.status(401).send('Invalid token.'); // User is not authenticated
-        } else if (err.name === 'TokenExpiredError') {
-            return res.status(401).send('Token has expired.'); // User is not authenticated
-        } else {
-            console.error('ERROR: Token verification error:', err.message);
-            return res.status(500).send('Error verifying token: ' + err.message);
-        }
-    }
-};
-
 // Resource Access Control Middleware
 const checkResourceAccess = async (req, res, next) => {
     const pathParts = req.path.split('/');
@@ -244,7 +221,7 @@ app.post('/api/login', async (req, res) => {
 
 
 // Retrieve User's Own Messages related to Specific User
-app.get('/api/:id/messages/:toid', authenticate, checkResourceAccess, async (req, res) => {
+app.get('/api/:id/messages/:toid', authenticate, async (req, res) => {
     const fromUID = req.params.id; // Sender's ID from the URL
     const toUID = req.params.toid; // Recipient's ID from the URL
 
@@ -343,7 +320,7 @@ app.delete('/api/:id/posts/:postId', authenticate, async (req, res) => {
 
 
 // Post a New Message
-app.post('/api/messages', verifyToken, async (req, res) => {
+app.post('/api/messages', authenticate, async (req, res) => {
     const { ToUID, MessageText, SentDt } = req.body;
     const FROMUID = req.user.id; // Access the user ID from the request object
 
@@ -368,7 +345,7 @@ app.post('/api/messages', verifyToken, async (req, res) => {
 });
 
 // Post a New Post
-app.post('/api/posts', verifyToken, async (req, res) => {
+app.post('/api/posts', authenticate, async (req, res) => {
     const { Content, MediaType, MediaURL, Timestamp } = req.body;
     const UserID = req.user.id; // Access the user ID from the request object
 
