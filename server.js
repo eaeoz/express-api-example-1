@@ -416,7 +416,6 @@ app.put('/api/:id/posts/:postId', authenticate, async (req, res) => {
     }
 });
 
-
 // 404 Error Handler for unknown URLs
 app.use((req, res) => {
     res.status(404).json({
