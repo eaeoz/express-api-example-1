@@ -20,13 +20,20 @@ const limiter = rateLimit({
 });
 
 // Apply the rate limiter to all requests
-app.use(limiter);
-app.use(helmet());
 app.use(cors({
     origin: 'http://localhost:3001', // Adjust this to your frontend URL
     methods: ['GET', 'POST', 'PUT', 'DELETE'], // Specify allowed methods
+    allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true // Allow credentials (if needed)
 }));
+app.options('*', (req, res) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.send();
+});
+app.use(limiter);
+app.use(helmet());
 app.options('/api/login', cors()); // Enable preflight for this route
 app.use(express.json()); // Middleware to parse JSON bodies
 // Middleware
